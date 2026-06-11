@@ -1,87 +1,70 @@
 (function() {
+    'use strict';
     let ativo = false;
-    let visivel = true;
-    let respostasEncontradas = [];
+    let visivel = false; // Começa escondido para ser discreto
+    let respostas = [];
 
-    // --- 1. INTERFACE VOID ATLAS V4 (Limpa) ---
-    const menu = document.createElement('div');
-    Object.assign(menu.style, {
-        position: 'fixed', bottom: '20px', left: '20px', padding: '15px',
-        backgroundColor: '#111', color: '#0f0', borderRadius: '8px',
-        border: '2px solid #008489', zIndex: '1000000', fontFamily: 'sans-serif',
-        boxShadow: '0 4px 15px rgba(0,0,0,0.5)', width: '180px'
+    // --- 1. INTERFACE DISCRETA ---
+    const painel = document.createElement('div');
+    Object.assign(painel.style, {
+        position: 'fixed', top: '10px', right: '10px', padding: '10px',
+        backgroundColor: 'rgba(0, 0, 0, 0.9)', color: '#0f0', borderRadius: '4px',
+        border: '1px solid #333', zIndex: '2147483647', fontFamily: 'monospace',
+        fontSize: '12px', display: 'none', boxShadow: '0 0 10px rgba(0,0,0,0.5)'
     });
-
-    menu.innerHTML = `
-        <div style="text-align:center; font-weight:bold; margin-bottom:10px; color:#008489">VOID ATLAS V4</div>
-        <button id="btn-toggle-hack" style="width:100%; padding:10px; cursor:pointer; background:#222; color:#0f0; border:1px solid #0f0; border-radius:4px; font-weight:bold">ATIVAR</button>
-        <div id="log-status" style="font-size:10px; margin-top:10px; text-align:center; color:#888">Aguardando questão...</div>
-        <div style="font-size:9px; margin-top:5px; text-align:center; color:#555">F2 para Ocultar</div>
+    painel.innerHTML = `
+        <div style="border-bottom:1px solid #333;margin-bottom:5px;padding-bottom:2px">VA-INTERNAL v5</div>
+        <div id="va-status">STATUS: STANDBY</div>
+        <div id="va-info" style="color:#888;font-size:10px">F2: TOGGLE</div>
     `;
-    document.body.appendChild(menu);
+    document.body.appendChild(painel);
 
-    const updateStatus = (msg, color = "#888") => {
-        const s = document.getElementById('log-status');
-        s.innerText = msg;
-        s.style.color = color;
-    };
-
-    // --- 2. INTERCEPTADOR SEGURO (Não quebra o site) ---
-    const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-        const result = await originalFetch(...args);
-        
-        // Se for uma requisição de dados do Khan, analisamos uma cópia
-        if (args[0] && args[0].includes("graphql")) {
-            const clone = result.clone();
-            clone.json().then(data => {
-                try {
-                    const itemData = data.data?.assessmentItem?.item?.itemData;
-                    if (itemData) {
-                        const questao = JSON.parse(itemData);
-                        respostasEncontradas = [];
-                        const widgets = questao.question.widgets;
-                        
-                        for (let key in widgets) {
-                            const w = widgets[key];
+    // --- 2. INTERCEPTOR ULTRA-SEGURO (Não quebra o site) ---
+    const nativeFetch = window.fetch;
+    window.fetch = function() {
+        return nativeFetch.apply(this, arguments).then(res => {
+            if (res.ok && arguments[0] && arguments[0].includes("graphql")) {
+                res.clone().json().then(json => {
+                    const data = json.data?.assessmentItem?.item?.itemData;
+                    if (data) {
+                        const parsed = JSON.parse(data);
+                        respostas = [];
+                        const widgets = parsed.question.widgets;
+                        for (let k in widgets) {
+                            const w = widgets[k];
                             if (w.type === "radio") {
-                                w.options.choices.forEach((c, i) => {
-                                    if (c.correct) respostasEncontradas.push({ type: 'radio', index: i });
-                                });
+                                w.options.choices.forEach((c, i) => { if (c.correct) respostas.push({t:'r', i:i}); });
                             } else if (w.type === "numeric-input") {
-                                const correct = w.options.answers.find(a => a.status === "correct");
-                                if (correct) respostasEncontradas.push({ type: 'text', value: correct.value });
+                                const c = w.options.answers.find(a => a.status === "correct");
+                                if (c) respostas.push({t:'t', v:c.value});
                             }
                         }
-                        if (respostasEncontradas.length > 0) {
-                            updateStatus("✅ Resposta pronta!", "#0f0");
-                            if (ativo) setTimeout(aplicarRespostas, 500);
+                        if (respostas.length > 0) {
+                            document.getElementById('va-status').innerText = "STATUS: READY";
+                            if (ativo) setTimeout(executar, 600);
                         }
                     }
-                } catch (e) {}
-            }).catch(() => {});
-        }
-        return result;
+                }).catch(()=>{});
+            }
+            return res;
+        });
     };
 
-    // --- 3. APLICADOR DE RESPOSTAS ---
-    function aplicarRespostas() {
-        if (!ativo || respostasEncontradas.length === 0) return;
-        
-        respostasEncontradas.forEach(r => {
-            if (r.type === 'radio') {
-                const opcoes = document.querySelectorAll('[role="radio"], input[type="radio"]');
-                if (opcoes[r.index]) opcoes[r.index].click();
-            } else if (r.type === 'text') {
-                const inputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
-                if (inputs[0]) {
-                    inputs[0].value = r.value;
-                    inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+    // --- 3. EXECUÇÃO SILENCIOSA ---
+    function executar() {
+        if (!ativo || respostas.length === 0) return;
+        respostas.forEach(r => {
+            if (r.t === 'r') {
+                const els = document.querySelectorAll('[role="radio"], input[type="radio"]');
+                if (els[r.i]) els[r.i].click();
+            } else if (r.t === 't') {
+                const input = document.querySelector('input[type="text"], input[type="tel"]');
+                if (input) {
+                    input.value = r.v;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
                 }
             }
         });
-
-        // Clica no botão Verificar
         setTimeout(() => {
             const btn = document.querySelector('button[data-testid="exercise-check-answer"]') || 
                         Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes("Verificar"));
@@ -89,25 +72,16 @@
         }, 500);
     }
 
-    // --- 4. CONTROLES ---
-    const btn = document.getElementById('btn-toggle-hack');
-    btn.onclick = () => {
-        ativo = !ativo;
-        btn.innerText = ativo ? "DESATIVAR" : "ATIVAR";
-        btn.style.background = ativo ? "#0f0" : "#222";
-        btn.style.color = ativo ? "#000" : "#0f0";
-        if (ativo) {
-            updateStatus("Hack Ligado", "#0f0");
-            aplicarRespostas();
-        } else {
-            updateStatus("Hack Desligado", "#888");
-        }
-    };
-
+    // --- 4. COMANDOS DE TECLADO ---
     window.addEventListener('keydown', (e) => {
         if (e.key === "F2") {
             visivel = !visivel;
-            menu.style.display = visivel ? 'block' : 'none';
+            painel.style.display = visivel ? 'block' : 'none';
+        }
+        if (e.key === "F4") { // Atalho rápido para ligar/desligar sem abrir menu
+            ativo = !ativo;
+            document.getElementById('va-status').innerText = ativo ? "STATUS: ACTIVE" : "STATUS: STANDBY";
+            document.getElementById('va-status').style.color = ativo ? "#0f0" : "#f00";
         }
     });
 })();
